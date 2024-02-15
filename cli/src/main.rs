@@ -475,16 +475,29 @@ fn set_mode(context: &mut Context, args: &Mode) -> Result<(), Box<dyn std::error
     let config = context.create_output_config();
     let head_config = config.enable_head(&head.wlr_head, &context.handle, context.data);
 
-    if let Some(scale) = args.scale {
-        head_config.set_scale(f64::from(scale));
-    }
-
     let mode_iter = || {
         head.modes
             .iter()
             .filter_map(|mode_id| context.output_modes.get(mode_id))
             .filter(|mode| mode.width == args.width && mode.height == args.height)
     };
+
+    if let Some(scale) = args.scale.map(f64::from) {
+        if (head.scale - scale).abs() > f64::EPSILON {
+            head_config.set_scale(scale);
+
+            // If the scale changes, adjust display position appropriately.
+            if let Some(ref current_id) = head.current_mode {
+                if let Some(current_mode) = context.output_modes.get(current_id) {
+                    let before = f64::from(current_mode.height) / head.scale;
+                    let after = f64::from(current_mode.height) / scale;
+                    #[allow(clippy::cast_possible_truncation)]
+                    head_config
+                        .set_position(head.position_x, head.position_y - (after - before) as i32);
+                }
+            }
+        }
+    }
 
     if let Some(transform) = args.transform {
         head_config.set_transform(transform.wl_transform());
